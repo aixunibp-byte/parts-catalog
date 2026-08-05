@@ -56,18 +56,26 @@ export default function CatalogPage() {
   return (
     <>
       <AppHeader />
-      <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Container maxWidth="lg" sx={{ py: { xs: 2, md: 4 }, px: { xs: 1.5, sm: 3 } }}>
         <Paper
           elevation={0}
           sx={{
-            p: { xs: 3, md: 5 },
+            p: { xs: 2.5, sm: 4, md: 5 },
             mb: 4,
             textAlign: "center",
             background: "linear-gradient(135deg, #1B3A5C 0%, #3D7CAE 100%)",
             borderRadius: 3,
           }}
         >
-          <Typography variant="h4" sx={{ color: "#FFFFFF", mb: 3, fontWeight: 600 }}>
+          <Typography
+            variant="h4"
+            sx={{
+              color: "#FFFFFF",
+              mb: 3,
+              fontWeight: 600,
+              fontSize: { xs: "1.4rem", sm: "1.8rem", md: "2.125rem" },
+            }}
+          >
             Поиск автозапчастей Omegation
           </Typography>
           <TextField
@@ -82,7 +90,7 @@ export default function CatalogPage() {
               backgroundColor: "#FFFFFF",
               borderRadius: 2,
               "& .MuiOutlinedInput-root": { borderRadius: 2 },
-              "& input": { fontSize: "1.15rem", py: 1.5 },
+              "& input": { fontSize: { xs: "1rem", sm: "1.15rem" }, py: 1.5 },
             }}
             InputProps={{
               startAdornment: (
@@ -94,7 +102,7 @@ export default function CatalogPage() {
           />
           <Box sx={{ display: "flex", justifyContent: "center" }}>
             <FormControlLabel
-              sx={{ mt: 2, ml: 6, color: "#FFFFFF" }}
+              sx={{ mt: 2, ml: { xs: 3, sm: 6 }, color: "#FFFFFF" }}
               control={
                 <Switch
                   checked={inStockOnly}
@@ -116,7 +124,7 @@ export default function CatalogPage() {
           <Alert severity="info">Ничего не найдено по заданным условиям.</Alert>
         ) : (
           <>
-            <Grid container spacing={2}>
+            <Grid container spacing={2} justifyContent="center">
               {items.map((part) => (
                 <Grid item xs={12} sm={6} md={4} lg={3} key={part.id}>
                   <PartCard part={part} />

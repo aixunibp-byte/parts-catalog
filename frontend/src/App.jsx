@@ -1,6 +1,8 @@
 import { ThemeProvider, CssBaseline } from "@mui/material";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import theme from "./theme";
+import { useMemo } from "react";
+import { getTheme } from "./theme";
+import { ThemeModeProvider, useThemeMode } from "./ThemeModeContext";
 
 import CatalogPage from "./pages/CatalogPage";
 import PartDetailsPage from "./pages/PartDetailsPage";
@@ -8,7 +10,10 @@ import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminPartsListPage from "./pages/AdminPartsListPage";
 import AdminPartEditPage from "./pages/AdminPartEditPage";
 
-export default function App() {
+function AppContent() {
+  const { mode } = useThemeMode();
+  const theme = useMemo(() => getTheme(mode), [mode]);
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -26,5 +31,13 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </ThemeProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeModeProvider>
+      <AppContent />
+    </ThemeModeProvider>
   );
 }

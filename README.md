@@ -1,4 +1,4 @@
-# Parts Catalog (Omegation)
+# Parts Catalog 
 
 Каталог автозапчастей с автосинхронизацией карточек из Ozon Seller API (read-only) и админ-панелью для ручного редактирования контента.
 

@@ -36,7 +36,7 @@ BRAND_ATTRIBUTE_ID = 85
 ARTICLE_ATTRIBUTE_ID = 9048
 BRAND_FILTER_VALUE = "omegation"
 # Атрибуты, которые разрешено показывать в блоке "характеристики" карточки товара
-ALLOWED_ATTRIBUTE_IDS = {85, 9048, 4191}
+ALLOWED_ATTRIBUTE_IDS = {85, 9048}
 
 
 def utcnow():

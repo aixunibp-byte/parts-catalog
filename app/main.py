@@ -1,6 +1,8 @@
 """
 FastAPI backend каталога автозапчастей.
-Публичное API для витрины + защищённые /admin/* эндпоинты для редактирования карточек.
+Публичное API показывает только товары бренда Omegation (атрибут #85).
+Поиск дополнительно учитывает атрибут #9048 (номер детали/аналога).
+Админ-панель видит весь синхронизированный каталог без этого ограничения.
 """
 import os
 import uuid
@@ -11,7 +13,7 @@ from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 
 from database import get_db, init_db
@@ -27,6 +29,12 @@ PUBLIC_UPLOAD_PREFIX = "/uploads"
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+
+# Атрибут Ozon, в котором хранится название бренда (видно в карточке товара на Ozon)
+BRAND_ATTRIBUTE_ID = 85
+# Атрибут с артикулом/номером детали — по нему идёт дополнительный поиск
+ARTICLE_ATTRIBUTE_ID = 9048
+BRAND_FILTER_VALUE = "omegation"
 
 
 def utcnow():
@@ -121,26 +129,54 @@ def log_admin_action(db: Session, part_id: int, action: str, details: Optional[d
     db.add(AdminAuditLog(part_id=part_id, action=action, details=details))
 
 
+def _article_search_clause(like: str):
+    """EXISTS-условие: у товара есть атрибут с номером детали, совпадающий с запросом."""
+    return Part.attributes.any(
+        and_(
+            PartAttribute.ozon_attribute_id == ARTICLE_ATTRIBUTE_ID,
+            PartAttribute.value.ilike(like),
+        )
+    )
+
+
+def _omegation_brand_clause():
+    """EXISTS-условие: у товара есть атрибут бренда со значением Omegation."""
+    return Part.attributes.any(
+        and_(
+            PartAttribute.ozon_attribute_id == BRAND_ATTRIBUTE_ID,
+            PartAttribute.value.ilike(f"%{BRAND_FILTER_VALUE}%"),
+        )
+    )
+
+
 @app.get("/parts")
 def list_parts(
     db: Session = Depends(get_db),
     search: Optional[str] = Query(None),
-    brand: Optional[str] = Query(None),
     in_stock_only: bool = Query(False),
     include_archived: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=100),
 ):
+    """Публичная витрина: всегда только товары с атрибутом бренда Omegation.
+    Поиск идёт по названию, артикулу (offer_id) и по атрибуту с номером детали."""
     query = db.query(Part)
     if not include_archived:
         query = query.filter(Part.is_archived.is_(False))
     if in_stock_only:
         query = query.filter(Part.has_stock.is_(True))
-    if brand:
-        query = query.filter(Part.brand == brand)
+
+    query = query.filter(_omegation_brand_clause())
+
     if search:
         like = f"%{search}%"
-        query = query.filter(or_(Part.name.ilike(like), Part.offer_id.ilike(like)))
+        query = query.filter(
+            or_(
+                Part.name.ilike(like),
+                Part.offer_id.ilike(like),
+                _article_search_clause(like),
+            )
+        )
 
     total = query.count()
     items = (
@@ -190,12 +226,19 @@ def admin_list_parts(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
+    """Админ видит весь синхронизированный каталог, без ограничения по бренду."""
     query = db.query(Part)
     if only_edited:
         query = query.filter(Part.manual_override.is_(True))
     if search:
         like = f"%{search}%"
-        query = query.filter(or_(Part.name.ilike(like), Part.offer_id.ilike(like)))
+        query = query.filter(
+            or_(
+                Part.name.ilike(like),
+                Part.offer_id.ilike(like),
+                _article_search_clause(like),
+            )
+        )
 
     total = query.count()
     items = (

@@ -6,7 +6,13 @@
 контентные поля (name/description/brand/category_name/images) больше не перезаписываются
 синхронизатором. Цена/остатки/статус модерации/is_archived обновляются всегда.
 
-Использует библиотеку ozonapi-async (https://github.com/a-ulianov/OzonAPI).
+ВАЖНО: поле primary_image в ответе /v3/product/info/list библиотеки ozonapi-async
+типизировано как Optional[list[str]] (список), а не одиночная строка.
+Без нормализации psycopg2 сериализует список в литерал массива Postgres:
+"{https://...}" вместо чистого URL. Функция _first_image_url() исправляет это,
+беря первый элемент списка либо возвращая значение как есть, если это уже строка.
+
+JIспользует библиотеку ozonapi-async (https://github.com/a-ulianov/OzonAPI).
 pip install ozonapi-async
 """
 import asyncio
@@ -42,6 +48,17 @@ def _to_decimal(value):
         return Decimal(str(value))
     except InvalidOperation:
         return None
+
+
+def _first_image_url(value):
+    """Нормализует primary_image: библиотека ozonapi-async возвращает список
+    (Optional[list[str]]), даже если реально там один URL. Берём первый элемент,
+    чтобы не сохранить в БД литерал массива Postgres вида '{https://...}'."""
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return value[0] if value else None
+    return value
 
 
 async def fetch_all_offer_ids(api: SellerAPI):
@@ -121,7 +138,7 @@ def upsert_part(db, item, attributes):
         part.width = getattr(item, "width", None)
         part.height = getattr(item, "height", None)
         part.dimension_unit = getattr(item, "dimension_unit", None)
-        part.primary_image = getattr(item, "primary_image", None)
+        part.primary_image = _first_image_url(getattr(item, "primary_image", None))
 
     db.flush()
 

@@ -1,57 +1,305 @@
-# Parts Catalog 
+# Parts Catalog — Omegation
 
-Каталог автозапчастей с автосинхронизацией карточек из Ozon Seller API (read-only) и админ-панелью для ручного редактирования контента.
+Веб-каталог автозапчастей бренда **Omegation**, синхронизируемый с товарами продавца на **Ozon**. Публичная витрина показывает только товары бренда Omegation с возможностью поиска по названию, артикулу и номеру детали/аналога. Отдельная админ-панель позволяет видеть весь синхронизированный каталог (все бренды) и редактировать контент карточек (фото, описание) без потери данных при следующей синхронизации.
+
+## Содержание
+
+- [Архитектура](#архитектура)
+- [Стек технологий](#стек-технологий)
+- [Структура репозитория](#структура-репозитория)
+- [Переменные окружения](#переменные-окружения)
+- [Быстрый старт (Docker Compose)](#быстрый-старт-docker-compose)
+- [Синхронизация с Ozon](#синхронизация-с-ozon)
+- [Атрибуты Ozon и их роль в каталоге](#атрибуты-ozon-и-их-роль-в-каталоге)
+- [Публичное API](#публичное-api)
+- [Админ API](#админ-api)
+- [Фронтенд](#фронтенд)
+- [Тема оформления](#тема-оформления)
+- [Деплой изменений](#деплой-изменений)
+- [Резервное копирование](#резервное-копирование)
 
 ## Архитектура
 
+Проект состоит из четырёх контейнеров, поднимаемых через `docker-compose.yml`:
+
+| Сервис | Назначение |
+|---|---|
+| `db` | PostgreSQL 16 — хранит каталог товаров, изображения, атрибуты, остатки, журнал синхронизаций и аудит действий админа |
+| `api` | FastAPI-приложение — публичное и админское REST API |
+| `sync_worker` | Отдельный процесс (`scheduler.py`), периодически подтягивающий данные из Ozon Seller API и обновляющий БД |
+| `nginx` | Отдаёт собранный React-фронтенд (статика) и проксирует запросы к `api`, а также раздаёт загруженные вручную изображения |
+
+Схема данных: Ozon → `sync_worker` (по расписанию) → PostgreSQL → `api` → фронтенд. Админ может через свою панель точечно переопределять контент (фото, описание) — эти изменения помечаются флагом `manual_override` и не затираются следующей синхронизацией, если админ явно не откатит их назад через "Revert to sync".
+
+## Стек технологий
+
+**Backend**
+- Python, FastAPI, Uvicorn
+- SQLAlchemy 2.0 + PostgreSQL (`psycopg2-binary`)
+- APScheduler — периодический запуск синхронизации с Ozon
+- `ozonapi-async` — клиент Ozon Seller API
+- `python-multipart` — загрузка изображений через админку
+
+**Frontend**
+- React + Vite
+- MUI (Material UI) — компоненты интерфейса
+- React Router — маршрутизация
+- Светлая/тёмная тема с сохранением выбора в `localStorage`
+
+**Инфраструктура**
+- Docker Compose (4 сервиса)
+- Nginx — реверс-прокси и раздача статики
+
+## Структура репозитория
+
 ```
-[Ozon Seller API] -> sync_worker (APScheduler) -> PostgreSQL -> FastAPI -> nginx -> React/MUI
-                                                                   ^
-                                                        Admin API (Bearer token)
+parts-catalog/
+├── app/                        # Backend (FastAPI)
+│   ├── main.py                 # Точки входа REST API (публичные + админские)
+│   ├── models.py                # SQLAlchemy-модели: Part, PartImage, PartAttribute, PartStock, SyncLog, AdminAuditLog
+│   ├── database.py              # Подключение к БД, сессии, инициализация
+│   ├── admin_auth.py            # Проверка admin-токена (Depends)
+│   ├── admin_schemas.py         # Pydantic-схемы для админских запросов
+│   ├── sync_ozon.py             # Логика синхронизации товаров с Ozon Seller API
+│   ├── scheduler.py             # Точка входа sync_worker — периодический запуск sync_ozon
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── uploads/                 # Изображения, загруженные вручную через админку
+├── frontend/
+│   └── src/
+│       ├── App.jsx              # Роутинг + подключение темы
+│       ├── main.jsx             # Точка входа React
+│       ├── theme.js             # getTheme(mode) — светлая/тёмная палитра MUI
+│       ├── ThemeModeContext.jsx # Контекст переключения темы (localStorage + prefers-color-scheme)
+│       ├── api.js               # Клиент публичного API
+│       ├── adminApi.js          # Клиент админского API
+│       ├── useAdminGuard.js     # Хук защиты админских роутов
+│       ├── components/
+│       │   ├── AppHeader.jsx    # Шапка: лого по центру, "О нас"/"Контакты", переключатель темы
+│       │   ├── Logo.jsx         # SVG-логотип Omegation
+│       │   └── PartCard.jsx     # Карточка товара в сетке каталога
+│       └── pages/
+│           ├── CatalogPage.jsx        # Публичная витрина: поиск, фильтр "в наличии", пагинация
+│           ├── PartDetailsPage.jsx    # Публичная карточка товара
+│           ├── AdminLoginPage.jsx     # Вход в админку по токену
+│           ├── AdminPartsListPage.jsx # Список всех товаров для админа
+│           └── AdminPartEditPage.jsx  # Редактирование фото/описания товара
+├── nginx/
+│   └── nginx.conf
+├── docker-compose.yml
+├── .env.example
+└── README.md
 ```
 
-## Ключевая логика: manual_override
+## Переменные окружения
 
-- Синхронизатор (`app/sync_ozon.py`) обновляет **все** поля товара из Ozon при каждом запуске.
-- Как только администратор редактирует карточку через `/admin/*` API, у неё выставляется `manual_override = true`.
-- После этого синхронизатор **перестаёт трогать** `name`, `description`, `brand`, `category_name` и фотографии этой карточки.
-- Цена, остатки и статус модерации продолжают обновляться из Ozon всегда, независимо от `manual_override` — это коммерчески значимые данные.
-- Кнопка «Вернуть автосинхронизацию» в админке сбрасывает флаг.
-
-## Быстрый старт на сервере
+Скопируйте шаблон и заполните реальными значениями:
 
 ```bash
-git clone https://github.com/aixunibp-byte/parts-catalog.git
-cd parts-catalog
 cp .env.example .env
-nano .env   # заполнить DB_PASSWORD, OZON_CLIENT_ID, OZON_API_KEY, ADMIN_TOKEN
+chmod 600 .env
+```
+
+| Переменная | Назначение |
+|---|---|
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Подключение к PostgreSQL. `DB_HOST=db` — имя сервиса в Docker-сети |
+| `OZON_CLIENT_ID`, `OZON_API_KEY` | Read-only ключ Ozon Seller API для синхронизации товаров |
+| `APP_ENV` | Режим приложения (`production` / `development`) |
+| `APP_SECRET_KEY` | Секрет FastAPI-приложения |
+| `ADMIN_TOKEN` | Токен доступа к админ-панели (используется `admin_auth.py` для защиты `/admin/*` эндпоинтов) |
+| `SYNC_INTERVAL_MINUTES` | Периодичность запуска синхронизации с Ozon, в минутах (по умолчанию 60) |
+| `UPLOAD_DIR` | Путь внутри контейнера для изображений, загруженных вручную через админку (`/app/uploads`) |
+
+⚠️ **Не коммитьте `.env` в репозиторий** — он уже добавлен в `.gitignore`. Храните `ADMIN_TOKEN` и ключи Ozon в секрете.
+
+## Быстрый старт (Docker Compose)
+
+```bash
+git clone <repo_url> parts-catalog
+cd parts-catalog
+
+cp .env.example .env
+# заполните .env реальными значениями (см. таблицу выше)
 chmod 600 .env
 
-# Генерация секретов:
-#   openssl rand -hex 32   -> ADMIN_TOKEN, APP_SECRET_KEY
-#   openssl rand -base64 24 -> DB_PASSWORD
-
+# Собрать фронтенд перед первым запуском
 cd frontend
 npm install
 npm run build
 cd ..
 
 docker compose up -d --build
-docker compose logs -f
 ```
 
-## Проверка
+После старта:
+- Публичный каталог — `http://<host>/`
+- Админ-панель — `http://<host>/admin/login`
+- Проверка статуса синхронизации — `GET /sync/status`
+
+Проверить, что все сервисы поднялись:
 
 ```bash
-curl http://localhost/api/health
-curl http://localhost/api/parts
+docker compose ps
+docker compose logs -f api
+docker compose logs -f sync_worker
 ```
 
-Админка: `http://your-domain/admin/login` — вход по токену из `ADMIN_TOKEN`.
+## Синхронизация с Ozon
 
-## Структура
+Сервис `sync_worker` запускает `scheduler.py`, который каждые `SYNC_INTERVAL_MINUTES` минут:
 
-- `app/` — FastAPI backend, модели SQLAlchemy, синхронизатор Ozon, admin API
-- `frontend/` — React + MUI, витрина каталога и админ-панель
-- `nginx/` — reverse proxy конфиг
-- `docker-compose.yml` — оркестрация: db, api, sync_worker, nginx
+1. Обращается к Ozon Seller API (`OZON_CLIENT_ID` + `OZON_API_KEY`) за списком товаров и их атрибутами.
+2. Обновляет/создаёт записи `Part`, `PartImage`, `PartAttribute`, `PartStock` в PostgreSQL.
+3. Пишет результат каждого запуска в `SyncLog` (успех/ошибка, число обработанных и упавших товаров).
+4. **Не перезаписывает** карточки, которые админ вручную отредактировал (`manual_override = true`) — такие товары обновляются только по остаткам/цене, но не по фото и описанию, пока админ не сделает "Revert to sync".
+
+Статус последнего запуска синхронизации доступен публично:
+
+```
+GET /sync/status
+```
+
+```json
+{
+  "status": "success",
+  "started_at": "2026-08-05T03:00:00+00:00",
+  "finished_at": "2026-08-05T03:02:14+00:00",
+  "products_processed": 214,
+  "products_failed": 0,
+  "error_message": null
+}
+```
+
+## Атрибуты Ozon и их роль в каталоге
+
+Ozon хранит характеристики товара в виде списка `{id, value}`. В проекте используются три атрибута с особой ролью:
+
+| ID атрибута | Назначение |
+|---|---|
+| **85** | Название бренда. Публичная витрина показывает **только** товары, где значение этого атрибута содержит "Omegation" — остальные бренды из общего Ozon-каталога продавца скрыты от покупателей |
+| **9048** | Номер детали / артикул аналога. Используется как **основной отображаемый артикул** товара (поле `article` в API) и участвует в дополнительном поиске — так покупатель может найти товар по номеру детали, даже если он не совпадает с внутренним `offer_id` |
+| ~~4191~~ | Ранее входил в список отображаемых характеристик, **исключён** — не несёт полезной информации для покупателя |
+
+В карточке товара (`GET /parts/{id}` → `attributes`) публично показываются только атрибуты **85** и **9048** — остальные технические атрибуты Ozon (цены модерации, статусы, промо и т.д.) отфильтрованы на backend и никогда не попадают в ответ API.
+
+Если у товара не заполнен атрибут 9048, поле `article` автоматически подставляет `offer_id` как запасной вариант.
+
+## Публичное API
+
+Base URL: `/` (через nginx-прокси к `api`)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/health` | Проверка живости сервиса |
+| GET | `/parts` | Список товаров бренда Omegation. Параметры: `search`, `in_stock_only`, `page`, `page_size` |
+| GET | `/parts/{id}` | Полная карточка товара: фото, описание, характеристики (85, 9048), остатки по складам |
+| GET | `/brands` | Список брендов, присутствующих в каталоге (справочно) |
+| GET | `/sync/status` | Статус последнего запуска синхронизации с Ozon |
+
+**Поиск (`/parts?search=...`)** ищет одновременно по:
+- названию товара,
+- `offer_id` (внутреннему артикулу),
+- значению атрибута 9048 (номер детали/аналога).
+
+Пример ответа `GET /parts`:
+
+```json
+{
+  "total": 87,
+  "page": 1,
+  "page_size": 24,
+  "items": [
+    {
+      "id": 101,
+      "offer_id": "OMG-VLB10002",
+      "article": "VLB10002",
+      "name": "Блок клапанов подвески, Omegation VLB10002",
+      "brand": "Omegation",
+      "price": 7800.0,
+      "old_price": null,
+      "currency_code": "RUB",
+      "primary_image": "https://.../image.jpg",
+      "has_stock": true,
+      "is_archived": false,
+      "manual_override": false
+    }
+  ]
+}
+```
+
+## Админ API
+
+Все эндпоинты `/admin/*` защищены зависимостью `require_admin` (проверка `ADMIN_TOKEN` из `admin_auth.py`). Админ видит **весь** синхронизированный каталог, без фильтра по бренду Omegation.
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/admin/parts` | Список всех товаров каталога (все бренды). Параметры: `search`, `only_edited`, `page`, `page_size` |
+| GET | `/admin/parts/{id}` | Полная карточка товара для редактирования |
+| PATCH | `/admin/parts/{id}` | Изменить контент (название, описание и т.д.) — выставляет `manual_override = true` |
+| POST | `/admin/parts/{id}/revert-to-sync` | Откатить ручные правки, вернуть карточку под управление синхронизации |
+| POST | `/admin/parts/{id}/images/upload` | Загрузить изображение файлом (JPEG/PNG/WEBP, до 10 МБ) |
+| POST | `/admin/parts/{id}/images/by-url` | Добавить изображение по внешней ссылке |
+| DELETE | `/admin/parts/{id}/images` | Удалить изображение (`?image_url=...`) |
+| PUT | `/admin/parts/{id}/images/reorder` | Изменить порядок и главное изображение |
+| GET | `/admin/parts/{id}/audit-log` | Журнал всех ручных изменений по товару |
+
+Каждое админское изменение фиксируется в таблице `AdminAuditLog` (кто/что/когда изменил) — доступно через `audit-log`.
+
+## Фронтенд
+
+Маршруты приложения (`App.jsx`):
+
+| Путь | Страница |
+|---|---|
+| `/` | Каталог — поиск, фильтр "в наличии", сетка карточек, пагинация |
+| `/parts/:id` | Карточка товара — фото, цена, характеристики, остатки по складам |
+| `/admin/login` | Вход в админку по токену |
+| `/admin` | Редирект на `/admin/parts` |
+| `/admin/parts` | Список товаров для админа |
+| `/admin/parts/:id` | Редактирование товара (фото, описание) |
+
+Шапка (`AppHeader.jsx`) построена на симметричном flex-layout: логотип всегда точно по центру независимо от ширины правого блока с навигацией ("О нас", "Контакты") и переключателем темы. Пункты "О нас"/"Контакты" — заготовки для будущих информационных страниц.
+
+## Тема оформления
+
+Приложение поддерживает светлую и тёмную тему (`theme.js` → `getTheme(mode)`):
+
+- При первом визите тема определяется автоматически по системной настройке устройства (`prefers-color-scheme`).
+- Выбор пользователя сохраняется в `localStorage` (`omegation-theme-mode`) и переживает перезагрузку страницы.
+- Переключение — одним кликом по иконке солнца/луны в шапке, без перезагрузки страницы (`ThemeModeContext.jsx`).
+
+## Деплой изменений
+
+После любого изменения кода на сервере:
+
+```bash
+cd /path/to/parts-catalog
+git pull origin main
+
+# Если менялся backend:
+docker compose build api sync_worker
+docker compose up -d api sync_worker
+
+# Если менялся frontend:
+cd frontend
+npm run build
+cd ..
+docker compose restart nginx
+```
+
+База данных не пересоздаётся при обычном дефлое — `docker compose down -v` использовать только осознанно, это удалит все данные каталога.
+
+## Резервное копирование
+
+Данные хранятся в volume `pgdata`. Рекомендуемый способ бэкапа:
+
+```bash
+docker compose exec db pg_dump -U ${DB_USER} ${DB_NAME} > backup_$(date +%Y%m%d).sql
+```
+
+Загруженные через админку изображения хранятся в volume `uploads` — рекомендуется бэкапить его отдельно:
+
+```bash
+docker run --rm -v parts-catalog_uploads:/data -v $(pwd):/backup alpine \
+  tar czf /backup/uploads_$(date +%Y%m%d).tar.gz -C /data .
+```

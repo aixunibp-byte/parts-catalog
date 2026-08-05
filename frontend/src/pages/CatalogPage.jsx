@@ -1,7 +1,6 @@
-// frontend/src/pages/CatalogPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import {
-  Container, Grid, TextField, FormControlLabel, Switch,
+  Container, Grid, TextField, FormControlLabel, Switch, Box,
   Pagination, Stack, Typography, CircularProgress, Alert, InputAdornment, Paper,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
@@ -93,16 +92,18 @@ export default function CatalogPage() {
               ),
             }}
           />
-          <FormControlLabel
-            sx={{ mt: 2, color: "#FFFFFF" }}
-            control={
-              <Switch
-                checked={inStockOnly}
-                onChange={(e) => { setInStockOnly(e.target.checked); setPage(1); }}
-              />
-            }
-            label="Только в наличии"
-          />
+          <Box sx={{ display: "flex", justifyContent: "center" }}>
+            <FormControlLabel
+              sx={{ mt: 2, ml: 6, color: "#FFFFFF" }}
+              control={
+                <Switch
+                  checked={inStockOnly}
+                  onChange={(e) => { setInStockOnly(e.target.checked); setPage(1); }}
+                />
+              }
+              label="Только в наличии"
+            />
+          </Box>
         </Paper>
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}

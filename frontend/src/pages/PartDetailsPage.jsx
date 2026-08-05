@@ -105,7 +105,6 @@ export default function PartDetailsPage() {
                 label={totalStock > 0 ? `В наличии: ${totalStock} шт.` : "Нет в наличии"}
                 color={totalStock > 0 ? "success" : "default"}
               />
-              {part.moderate_status && <Chip label={`Статус: ${part.moderate_status}`} variant="outlined" />}
             </Stack>
 
             <Typography variant="h4" color="primary" gutterBottom>
@@ -123,8 +122,8 @@ export default function PartDetailsPage() {
             </Typography>
 
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              Артикул (offer_id): {part.offer_id}
-              {part.barcode && ` · Штрихкод: ${part.barcode}`}
+              Артикул: {part.article}
+              {part.barcode && ` · штрихкод: ${part.barcode}`}
             </Typography>
 
             {part.description && (

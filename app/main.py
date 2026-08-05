@@ -32,9 +32,11 @@ MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 
 # Атрибут Ozon, в котором хранится название бренда (видно в карточке товара на Ozon)
 BRAND_ATTRIBUTE_ID = 85
-# Атрибут с артикулом/номером детали — по нему идёт дополнительный поиск
+# Атрибут с артикулом/номером детали — по нему идёт дополнительный поиск и он же — основной артикул для отображения
 ARTICLE_ATTRIBUTE_ID = 9048
 BRAND_FILTER_VALUE = "omegation"
+# Атрибуты, которые разрешено показывать в блоке "характеристики" карточки товара
+ALLOWED_ATTRIBUTE_IDS = {85, 9048, 4191}
 
 
 def utcnow():
@@ -63,10 +65,19 @@ def health():
     return {"status": "ok"}
 
 
+def _get_attribute_value(part: Part, attribute_id: int) -> Optional[str]:
+    for a in part.attributes:
+        if a.ozon_attribute_id == attribute_id and a.value:
+            return a.value
+    return None
+
+
 def serialize_part_short(part: Part) -> dict:
+    article = _get_attribute_value(part, ARTICLE_ATTRIBUTE_ID) or part.offer_id
     return {
         "id": part.id,
         "offer_id": part.offer_id,
+        "article": article,
         "name": part.name,
         "brand": part.brand,
         "price": float(part.price) if part.price is not None else None,
@@ -101,7 +112,8 @@ def serialize_part_full(part: Part) -> dict:
         ],
         "attributes": [
             {"id": a.ozon_attribute_id, "value": a.value}
-            for a in part.attributes if a.value
+            for a in part.attributes
+            if a.value and a.ozon_attribute_id in ALLOWED_ATTRIBUTE_IDS
         ],
         "stocks": [
             {

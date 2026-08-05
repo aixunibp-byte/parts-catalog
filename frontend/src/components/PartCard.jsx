@@ -31,7 +31,7 @@ export default function PartCard({ part }) {
           </Stack>
 
           <Typography variant="caption" color="text.secondary" display="block">
-            Артикул: {part.offer_id}
+            Артикул: {part.article}
           </Typography>
 
           <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1 }}>

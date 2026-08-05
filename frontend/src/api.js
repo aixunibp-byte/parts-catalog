@@ -1,3 +1,4 @@
+// frontend/src/api.js
 import axios from "axios";
 
 const client = axios.create({
@@ -5,11 +6,10 @@ const client = axios.create({
   timeout: 10000,
 });
 
-export async function fetchParts({ search = "", brand = "", inStockOnly = false, page = 1, pageSize = 24 } = {}) {
+export async function fetchParts({ search = "", inStockOnly = false, page = 1, pageSize = 24 } = {}) {
   const { data } = await client.get("/parts", {
     params: {
       search: search || undefined,
-      brand: brand || undefined,
       in_stock_only: inStockOnly,
       page,
       page_size: pageSize,
@@ -21,11 +21,6 @@ export async function fetchParts({ search = "", brand = "", inStockOnly = false,
 export async function fetchPart(id) {
   const { data } = await client.get(`/parts/${id}`);
   return data;
-}
-
-export async function fetchBrands() {
-  const { data } = await client.get("/brands");
-  return data.brands;
 }
 
 export async function fetchSyncStatus() {

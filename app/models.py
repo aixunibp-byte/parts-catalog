@@ -47,6 +47,8 @@ class Part(Base):
     has_stock = Column(Boolean, default=False)
 
     primary_image = Column(String(1000), nullable=True)
+    # Исходная ссылка Ozon на главное изображение — хранится для сверки и ре-скачивания
+    primary_image_source_url = Column(String(1000), nullable=True)
 
     manual_override = Column(Boolean, default=False, nullable=False)
 
@@ -66,6 +68,8 @@ class PartImage(Base):
     id = Column(Integer, primary_key=True)
     part_id = Column(Integer, ForeignKey("parts.id", ondelete="CASCADE"), nullable=False)
     url = Column(String(1000), nullable=False)
+    # Исходная ссылка Ozon, с которой было скачано изображение. None, если загружено вручную админом.
+    source_url = Column(String(1000), nullable=True)
     sort_order = Column(Integer, default=0)
     is_primary = Column(Boolean, default=False)
 

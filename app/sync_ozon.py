@@ -12,14 +12,26 @@
 "{https://...}" вместо чистого URL. Функция _first_image_url() исправляет это,
 беря первый элемент списка либо возвращая значение как есть, если это уже строка.
 
+Изображения товаров скачиваются с CDN Ozon на сервер (в UPLOAD_DIR) и раздаются
+через nginx как локальный статический ресурс, вместо того, чтобы хранить внешние
+ссылки на Ozon. Исходный URL сохраняется в source_url для сверки и ре-скачивания
+при изменении. Имя файла — детерминированный sha256-хэш от URL, чтобы не
+скачивать повторно то, что уже есть на диске. При ошибке скачивания — fallback на
+исходный Ozon-URL, чтобы не терять фото совсем.
+
 JIспользует библиотеку ozonapi-async (https://github.com/a-ulianov/OzonAPI).
 pip install ozonapi-async
 """
 import asyncio
+import hashlib
 import logging
 import os
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import httpx
 
 from ozonapi import SellerAPI, SellerAPIConfig
 from ozonapi.seller.schemas.products import (
@@ -35,6 +47,19 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("sync_ozon")
 
 BATCH_SIZE = 100
+
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/app/uploads"))
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+PUBLIC_UPLOAD_PREFIX = "/uploads"
+
+IMAGE_DOWNLOAD_TIMEOUT_SECONDS = 15
+ALLOWED_IMAGE_CONTENT_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+_http_client = httpx.Client(timeout=IMAGE_DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True)
 
 
 def _now():
@@ -59,6 +84,49 @@ def _first_image_url(value):
     if isinstance(value, (list, tuple)):
         return value[0] if value else None
     return value
+
+
+def _guess_extension(source_url: str, content_type: str | None) -> str:
+    if content_type and content_type.split(";")[0].strip() in ALLOWED_IMAGE_CONTENT_TYPES:
+        return ALLOWED_IMAGE_CONTENT_TYPES[content_type.split(";")[0].strip()]
+    suffix = Path(urlsplit(source_url).path).suffix.lower()
+    if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
+        return suffix
+    return ".jpg"
+
+
+def download_image(source_url: str) -> str:
+    """Скачивает изображение с Ozon и сохраняет его локально.
+
+    Имя файла — sha256(source_url), поэтому при повторной синхронизации с тем же
+    URL файл не скачивается повторно, а переиспользуется уже имеющийся файл.
+    Возвращает публичный путь (/uploads/<hash>.ext). При любой ошибке возвращает
+    исходный source_url как fallback, чтобы не оставить товар без фото.
+    """
+    if not source_url:
+        return source_url
+
+    url_hash = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+
+    for existing in UPLOAD_DIR.glob(f"{url_hash}.*"):
+        return f"{PUBLIC_UPLOAD_PREFIX}/{existing.name}"
+
+    try:
+        response = _http_client.get(source_url)
+        response.raise_for_status()
+    except Exception as exc:
+        logger.warning("Не удалось скачать изображение %s: %s", source_url, exc)
+        return source_url
+
+    extension = _guess_extension(source_url, response.headers.get("content-type"))
+    destination = UPLOAD_DIR / f"{url_hash}{extension}"
+    try:
+        destination.write_bytes(response.content)
+    except OSError as exc:
+        logger.warning("Не удалось сохранить изображение %s: %s", source_url, exc)
+        return source_url
+
+    return f"{PUBLIC_UPLOAD_PREFIX}/{destination.name}"
 
 
 async def fetch_all_offer_ids(api: SellerAPI):
@@ -138,7 +206,14 @@ def upsert_part(db, item, attributes):
         part.width = getattr(item, "width", None)
         part.height = getattr(item, "height", None)
         part.dimension_unit = getattr(item, "dimension_unit", None)
-        part.primary_image = _first_image_url(getattr(item, "primary_image", None))
+
+        primary_source = _first_image_url(getattr(item, "primary_image", None))
+        if primary_source and primary_source != part.primary_image_source_url:
+            part.primary_image = download_image(primary_source)
+            part.primary_image_source_url = primary_source
+        elif not primary_source:
+            part.primary_image = None
+            part.primary_image_source_url = None
 
     db.flush()
 
@@ -153,11 +228,21 @@ def upsert_part(db, item, attributes):
             ))
 
     if not part.manual_override:
+        existing_by_source = {
+            img.source_url: img for img in part.images if img.source_url
+        }
         db.query(PartImage).filter_by(part_id=part.id).delete()
         images = getattr(item, "images", None) or []
-        for order, url in enumerate(images):
-            db.add(PartImage(part_id=part.id, url=url, sort_order=order,
-                              is_primary=(url == part.primary_image)))
+        for order, source_url in enumerate(images):
+            cached = existing_by_source.get(source_url)
+            local_url = cached.url if cached else download_image(source_url)
+            db.add(PartImage(
+                part_id=part.id,
+                url=local_url,
+                source_url=source_url,
+                sort_order=order,
+                is_primary=(source_url == part.primary_image_source_url),
+            ))
 
     db.query(PartAttribute).filter_by(part_id=part.id).delete()
     for attr in attributes or []:

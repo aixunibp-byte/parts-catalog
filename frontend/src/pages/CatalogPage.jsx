@@ -60,98 +60,136 @@ export default function CatalogPage() {
         <Paper
           elevation={0}
           sx={{
-            p: { xs: 3, sm: 5, md: 7 },
+            p: { xs: 3, sm: 5, md: 6 },
             mb: 5,
             textAlign: "center",
+            color: "#FFFFFF",
             background:
-              "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.08) 0%, transparent 45%), linear-gradient(135deg, #12294A 0%, #1B3A5C 45%, #3D7CAE 100%)",
-            borderRadius: 5,
+              "radial-gradient(circle at 12% 15%, rgba(175,211,234,0.16) 0%, transparent 32%), radial-gradient(circle at 88% 88%, rgba(91,155,213,0.18) 0%, transparent 30%), linear-gradient(118deg, #0F2740 0%, #1B3A5C 48%, #3D7CAE 100%)",
+            borderRadius: { xs: 3.5, sm: 4.5 },
             position: "relative",
             overflow: "hidden",
+            boxShadow: "0 18px 42px rgba(15,39,64,0.20)",
+            "&::after": {
+              content: '""',
+              position: "absolute",
+              inset: 0,
+              opacity: 0.18,
+              pointerEvents: "none",
+              backgroundImage:
+                "linear-gradient(rgba(255,255,255,0.16) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.16) 1px, transparent 1px)",
+              backgroundSize: "44px 44px",
+              maskImage: "linear-gradient(to bottom, black, transparent)",
+            },
           }}
         >
-          <Typography
-            variant="h4"
-            sx={{
-              color: "#FFFFFF",
-              mb: 1,
-              fontWeight: 700,
-              letterSpacing: "-0.02em",
-              fontSize: { xs: "1.5rem", sm: "2rem", md: "2.4rem" },
-            }}
-          >
-            Поиск автозапчастей Omegation
-          </Typography>
-          <Typography
-            sx={{
-              color: "rgba(255,255,255,0.75)",
-              mb: 4,
-              fontSize: { xs: "0.875rem", sm: "1rem" },
-            }}
-          >
-            точные аналоги и оригинальные детали в одном месте
-          </Typography>
-
-          <TextField
-            fullWidth
-            size="medium"
-            placeholder="Артикул, название или номер детали / аналога"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            sx={{
-              maxWidth: 680,
-              mx: "auto",
-              backgroundColor: "#FFFFFF",
-              borderRadius: 999,
-              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.18)",
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 999,
-                "& fieldset": { border: "none" },
-              },
-              "& input": { fontSize: { xs: "0.95rem", sm: "1.05rem" }, py: 1.7 },
-            }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start" sx={{ pl: 1 }}>
-                  <SearchIcon sx={{ fontSize: 24, color: "#3D7CAE" }} />
-                </InputAdornment>
-              ),
-            }}
-          />
-
-          <Box sx={{ display: "flex", justifyContent: "center" }}>
-            <FormControlLabel
+          <Box sx={{ position: "relative", zIndex: 1 }}>
+            <Typography
               sx={{
-                mt: 2.5,
-                color: "rgba(255,255,255,0.9)",
-                bgcolor: "rgba(255,255,255,0.08)",
-                borderRadius: 999,
-                px: 2,
-                py: 0.25,
+                textTransform: "uppercase",
+                letterSpacing: "0.16em",
+                fontSize: { xs: "0.62rem", sm: "0.72rem" },
+                fontWeight: 700,
+                color: "rgba(255,255,255,0.66)",
+                mb: 1.5,
               }}
-              control={
-                <Switch
-                  size="small"
-                  checked={inStockOnly}
-                  onChange={(e) => { setInStockOnly(e.target.checked); setPage(1); }}
-                />
-              }
-              label={<Typography variant="body2">только в наличии</Typography>}
+            >
+              Каталог Omegation
+            </Typography>
+            <Typography
+              variant="h3"
+              sx={{
+                color: "#FFFFFF",
+                mb: 1.5,
+                fontWeight: 700,
+                fontSize: { xs: "1.8rem", sm: "2.35rem", md: "2.85rem" },
+              }}
+            >
+              Точная деталь. Уверенное движение.
+            </Typography>
+            <Typography
+              sx={{
+                color: "rgba(255,255,255,0.76)",
+                mb: 4,
+                mx: "auto",
+                maxWidth: 530,
+                fontSize: { xs: "0.9rem", sm: "1rem" },
+                lineHeight: 1.65,
+              }}
+            >
+              Найдите запчасть по артикулу, названию или номеру детали / аналога.
+            </Typography>
+
+            <TextField
+              fullWidth
+              size="medium"
+              placeholder="Введите артикул или название детали"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              sx={{
+                maxWidth: 700,
+                mx: "auto",
+                backgroundColor: "rgba(255,255,255,0.98)",
+                borderRadius: 2.5,
+                boxShadow: "0 12px 28px rgba(2,12,25,0.26)",
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2.5,
+                  "& fieldset": { border: "1px solid rgba(15,39,64,0.10)" },
+                  "&:hover fieldset": { borderColor: "rgba(61,124,174,0.62)" },
+                  "&.Mui-focused fieldset": { borderColor: "#3D7CAE", borderWidth: 2 },
+                },
+                "& input": { fontSize: { xs: "0.95rem", sm: "1.05rem" }, py: 1.55 },
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start" sx={{ pl: 0.5 }}>
+                    <SearchIcon sx={{ fontSize: 23, color: "#3D7CAE" }} />
+                  </InputAdornment>
+                ),
+              }}
             />
+
+            <Box sx={{ display: "flex", justifyContent: "center" }}>
+              <FormControlLabel
+                sx={{
+                  mt: 2.5,
+                  mx: 0,
+                  color: "rgba(255,255,255,0.92)",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  bgcolor: "rgba(8,27,48,0.18)",
+                  borderRadius: 2,
+                  px: 1.25,
+                  py: 0.15,
+                  backdropFilter: "blur(6px)",
+                }}
+                control={
+                  <Switch
+                    size="small"
+                    checked={inStockOnly}
+                    onChange={(e) => { setInStockOnly(e.target.checked); setPage(1); }}
+                  />
+                }
+                label={<Typography variant="body2" sx={{ fontWeight: 500 }}>Только в наличии</Typography>}
+              />
+            </Box>
           </Box>
         </Paper>
 
-        {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }}>{error}</Alert>}
+        {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 2.5 }}>{error}</Alert>}
 
         {loading ? (
-          <Stack alignItems="center" sx={{ py: 8 }}>
+          <Stack alignItems="center" sx={{ py: 9 }}>
             <CircularProgress />
           </Stack>
         ) : items.length === 0 ? (
-          <Alert severity="info" sx={{ borderRadius: 3 }}>Ничего не найдено по заданным условиям.</Alert>
+          <Alert severity="info" sx={{ borderRadius: 2.5 }}>Ничего не найдено по заданным условиям.</Alert>
         ) : (
           <>
-            <Grid container spacing={2.5} justifyContent="center">
+            <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 2.5, px: 0.5 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>Запчасти</Typography>
+              <Typography variant="body2" color="text.secondary">Найдено: {total}</Typography>
+            </Stack>
+            <Grid container spacing={{ xs: 2, sm: 2.5 }} justifyContent="center">
               {items.map((part) => (
                 <Grid item xs={12} sm={6} md={4} lg={3} key={part.id}>
                   <PartCard part={part} />

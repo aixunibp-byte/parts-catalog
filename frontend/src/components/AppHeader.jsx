@@ -1,4 +1,4 @@
-import { AppBar, Toolbar, Box, Button, Stack, IconButton } from "@mui/material";
+import { AppBar, Toolbar, Box, Button, Stack, IconButton, Container } from "@mui/material";
 import { useNavigate, useLocation } from "react-router-dom";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
@@ -17,64 +17,77 @@ export default function AppHeader() {
   const isAdmin = location.pathname.startsWith("/admin");
 
   return (
-    <AppBar position="static" elevation={0}>
-      <Toolbar
-        sx={{
-          py: 1,
-          display: "flex",
-          alignItems: "center",
-          gap: 1,
-        }}
-      >
-        <Box sx={{ flex: 1 }} />
-
-        <Box
+    <AppBar position="sticky" elevation={0}>
+      <Container maxWidth="lg" disableGutters>
+        <Toolbar
           sx={{
-            cursor: isAdmin ? "default" : "pointer",
-            display: "flex",
+            minHeight: { xs: 58, sm: 66 },
+            px: { xs: 1.5, sm: 3 },
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr",
             alignItems: "center",
-            flexShrink: 0,
           }}
-          onClick={() => !isAdmin && navigate("/")}
         >
-          <Logo height={26} color="#FFFFFF" />
-        </Box>
+          <Box />
 
-        <Stack
-          direction="row"
-          spacing={{ xs: 0.25, sm: 1 }}
-          alignItems="center"
-          sx={{ flex: 1, justifyContent: "flex-end" }}
-        >
-          {!isAdmin &&
-            NAV_LINKS.map((link) => (
-              <Button
-                key={link.path}
-                color="inherit"
-                size="small"
-                onClick={() => navigate(link.path)}
-                sx={{
-                  fontSize: { xs: "0.68rem", sm: "0.8rem" },
-                  textTransform: "none",
-                  opacity: 0.9,
-                  minWidth: "auto",
-                  px: { xs: 0.6, sm: 1.5 },
-                }}
-              >
-                {link.label}
-              </Button>
-            ))}
-          <IconButton
-            onClick={toggleMode}
-            color="inherit"
-            size="small"
-            aria-label="Переключить тему"
-            sx={{ ml: { xs: 0, sm: 0.5 } }}
+          <Box
+            sx={{
+              cursor: isAdmin ? "default" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              py: 0.5,
+            }}
+            onClick={() => !isAdmin && navigate("/")}
           >
-            {mode === "dark" ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
-          </IconButton>
-        </Stack>
-      </Toolbar>
+            <Logo height={28} color="#FFFFFF" />
+          </Box>
+
+          <Stack
+            direction="row"
+            spacing={{ xs: 0, sm: 0.5 }}
+            alignItems="center"
+            justifyContent="flex-end"
+            sx={{ minWidth: 0 }}
+          >
+            {!isAdmin &&
+              NAV_LINKS.map((link) => (
+                <Button
+                  key={link.path}
+                  color="inherit"
+                  size="small"
+                  onClick={() => navigate(link.path)}
+                  sx={{
+                    color: "rgba(255,255,255,0.86)",
+                    fontSize: { xs: "0.66rem", sm: "0.78rem" },
+                    textTransform: "none",
+                    minWidth: "auto",
+                    px: { xs: 0.55, sm: 1.1 },
+                    whiteSpace: "nowrap",
+                    "&:hover": { color: "#FFFFFF", bgcolor: "rgba(255,255,255,0.08)" },
+                  }}
+                >
+                  {link.label}
+                </Button>
+              ))}
+            <IconButton
+              onClick={toggleMode}
+              color="inherit"
+              size="small"
+              aria-label="Переключить тему"
+              sx={{
+                ml: { xs: 0.15, sm: 0.5 },
+                border: "1px solid rgba(255,255,255,0.18)",
+                width: 30,
+                height: 30,
+                "&:hover": { bgcolor: "rgba(255,255,255,0.12)" },
+              }}
+            >
+              {mode === "dark" ? <LightModeIcon sx={{ fontSize: 16 }} /> : <DarkModeIcon sx={{ fontSize: 16 }} />}
+            </IconButton>
+          </Stack>
+        </Toolbar>
+      </Container>
     </AppBar>
   );
 }

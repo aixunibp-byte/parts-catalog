@@ -6,21 +6,16 @@
 контентные поля (name/description/brand/category_name/images) больше не перезаписываются
 синхронизатором. Цена/остатки/статус модерации/is_archived обновляются всегда.
 
+Изображения товаров скачиваются с CDN Ozon на сервер в UPLOAD_DIR и раздаются
+через nginx как локальные статические ресурсы. Публичные поля primary_image и
+PartImage.url содержат только локальные пути /uploads/<hash>.<ext>. Исходные URL
+Ozon сохраняются только в служебных полях source_url / primary_image_source_url,
+не попадают в публичное API и не используются как fallback. Если скачивание не
+удалось, изображение пропускается и будет повторно запрошено при следующей
+синхронизации.
+
 ВАЖНО: поле primary_image в ответе /v3/product/info/list библиотеки ozonapi-async
 типизировано как Optional[list[str]] (список), а не одиночная строка.
-Без нормализации psycopg2 сериализует список в литерал массива Postgres:
-"{https://...}" вместо чистого URL. Функция _first_image_url() исправляет это,
-беря первый элемент списка либо возвращая значение как есть, если это уже строка.
-
-Изображения товаров скачиваются с CDN Ozon на сервер (в UPLOAD_DIR) и раздаются
-через nginx как локальный статический ресурс, вместо того, чтобы хранить внешние
-ссылки на Ozon. Исходный URL сохраняется в source_url для сверки и ре-скачивания
-при изменении. Имя файла — детерминированный sha256-хэш от URL, чтобы не
-скачивать повторно то, что уже есть на диске. При ошибке скачивания — fallback на
-исходный Ozon-URL, чтобы не терять фото совсем.
-
-JIспользует библиотеку ozonapi-async (https://github.com/a-ulianov/OzonAPI).
-pip install ozonapi-async
 """
 import asyncio
 import hashlib
@@ -47,7 +42,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("sync_ozon")
 
 BATCH_SIZE = 100
-
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/app/uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 PUBLIC_UPLOAD_PREFIX = "/uploads"
@@ -76,9 +70,7 @@ def _to_decimal(value):
 
 
 def _first_image_url(value):
-    """Нормализует primary_image: библиотека ozonapi-async возвращает список
-    (Optional[list[str]]), даже если реально там один URL. Берём первый элемент,
-    чтобы не сохранить в БД литерал массива Postgres вида '{https://...}'."""
+    """Берёт первый URL из списка primary_image или возвращает строку как есть."""
     if value is None:
         return None
     if isinstance(value, (list, tuple)):
@@ -87,27 +79,25 @@ def _first_image_url(value):
 
 
 def _guess_extension(source_url: str, content_type: str | None) -> str:
-    if content_type and content_type.split(";")[0].strip() in ALLOWED_IMAGE_CONTENT_TYPES:
-        return ALLOWED_IMAGE_CONTENT_TYPES[content_type.split(";")[0].strip()]
+    normalized_content_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if normalized_content_type in ALLOWED_IMAGE_CONTENT_TYPES:
+        return ALLOWED_IMAGE_CONTENT_TYPES[normalized_content_type]
     suffix = Path(urlsplit(source_url).path).suffix.lower()
     if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
         return suffix
     return ".jpg"
 
 
-def download_image(source_url: str) -> str:
-    """Скачивает изображение с Ozon и сохраняет его локально.
+def download_image(source_url: str) -> str | None:
+    """Скачивает изображение и возвращает только локальный URL /uploads/*.
 
-    Имя файла — sha256(source_url), поэтому при повторной синхронизации с тем же
-    URL файл не скачивается повторно, а переиспользуется уже имеющийся файл.
-    Возвращает публичный путь (/uploads/<hash>.ext). При любой ошибке возвращает
-    исходный source_url как fallback, чтобы не оставить товар без фото.
+    При любой ошибке возвращает None. Внешний URL Ozon никогда не используется как
+    URL изображения для пользователя и не сохраняется в PartImage.url.
     """
     if not source_url:
-        return source_url
+        return None
 
     url_hash = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
-
     for existing in UPLOAD_DIR.glob(f"{url_hash}.*"):
         return f"{PUBLIC_UPLOAD_PREFIX}/{existing.name}"
 
@@ -116,7 +106,7 @@ def download_image(source_url: str) -> str:
         response.raise_for_status()
     except Exception as exc:
         logger.warning("Не удалось скачать изображение %s: %s", source_url, exc)
-        return source_url
+        return None
 
     extension = _guess_extension(source_url, response.headers.get("content-type"))
     destination = UPLOAD_DIR / f"{url_hash}{extension}"
@@ -124,7 +114,7 @@ def download_image(source_url: str) -> str:
         destination.write_bytes(response.content)
     except OSError as exc:
         logger.warning("Не удалось сохранить изображение %s: %s", source_url, exc)
-        return source_url
+        return None
 
     return f"{PUBLIC_UPLOAD_PREFIX}/{destination.name}"
 
@@ -172,7 +162,7 @@ async def fetch_attributes(api: SellerAPI, offer_ids):
 
 
 def upsert_part(db, item, attributes):
-    """Создаёт/обновляет карточку. Контентные поля не трогаются при manual_override=True."""
+    """Создаёт/обновляет карточку. Контент не трогается при manual_override=True."""
     part = db.query(Part).filter_by(ozon_product_id=item.id).one_or_none()
     if part is None:
         part = Part(ozon_product_id=item.id)
@@ -208,10 +198,15 @@ def upsert_part(db, item, attributes):
         part.dimension_unit = getattr(item, "dimension_unit", None)
 
         primary_source = _first_image_url(getattr(item, "primary_image", None))
-        if primary_source and primary_source != part.primary_image_source_url:
-            part.primary_image = download_image(primary_source)
-            part.primary_image_source_url = primary_source
-        elif not primary_source:
+        if primary_source:
+            local_primary_image = download_image(primary_source)
+            if local_primary_image:
+                part.primary_image = local_primary_image
+                part.primary_image_source_url = primary_source
+            else:
+                part.primary_image = None
+                part.primary_image_source_url = None
+        else:
             part.primary_image = None
             part.primary_image_source_url = None
 
@@ -228,20 +223,23 @@ def upsert_part(db, item, attributes):
             ))
 
     if not part.manual_override:
-        existing_by_source = {
-            img.source_url: img for img in part.images if img.source_url
-        }
         db.query(PartImage).filter_by(part_id=part.id).delete()
         images = getattr(item, "images", None) or []
         for order, source_url in enumerate(images):
-            cached = existing_by_source.get(source_url)
-            local_url = cached.url if cached else download_image(source_url)
+            local_url = download_image(source_url)
+            if not local_url:
+                logger.warning(
+                    "Фото пропущено для offer_id=%s: не удалось скачать %s",
+                    item.offer_id,
+                    source_url,
+                )
+                continue
             db.add(PartImage(
                 part_id=part.id,
                 url=local_url,
                 source_url=source_url,
                 sort_order=order,
-                is_primary=(source_url == part.primary_image_source_url),
+                is_primary=(local_url == part.primary_image),
             ))
 
     db.query(PartAttribute).filter_by(part_id=part.id).delete()
@@ -301,7 +299,7 @@ async def run_sync():
     except Exception as exc:
         log_entry.status = "failed"
         log_entry.error_message = str(exc)
-        logger.exception("Синхронизация прервана: %s", exc)
+        logger.exception("Синхронизация прерввана: %s", exc)
     finally:
         log_entry.finished_at = _now()
         log_entry.products_processed = processed

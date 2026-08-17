@@ -6,6 +6,7 @@ import { ThemeModeProvider, useThemeMode } from "./ThemeModeContext";
 
 import CatalogPage from "./pages/CatalogPage";
 import PartDetailsPage from "./pages/PartDetailsPage";
+import AboutPage from "./pages/AboutPage";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminPartsListPage from "./pages/AdminPartsListPage";
 import AdminPartEditPage from "./pages/AdminPartEditPage";
@@ -21,6 +22,7 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<CatalogPage />} />
           <Route path="/parts/:id" element={<PartDetailsPage />} />
+          <Route path="/about" element={<AboutPage />} />
 
           <Route path="/admin/login" element={<AdminLoginPage />} />
           <Route path="/admin" element={<Navigate to="/admin/parts" replace />} />
